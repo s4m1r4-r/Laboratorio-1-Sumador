@@ -24,6 +24,13 @@
 .cseg
 .org 0x0000
     rjmp RESET
+; =========================
+; OSCILADOR DE 1MHz
+; =========================
+ldi r16, (1<<CLKPCE)
+sts CLKPR, r16
+ldi r16, (1<<CLKPS2)	// 16 = 1 MHz
+sts CLKPR, r16
 
 RESET:
     ; Configuración de Pila
@@ -64,8 +71,25 @@ RESET:
     sbi PORTC, 4
     sbi PORTC, 5
 
-    clr cont1		//Pone el contador en 0
+; =========================
+; CONFIGURACIÓN SUMA
+; =========================
+    ; LEDs suma PD7-PD4 (D7-D4)
+    sbi DDRD, 7
+    sbi DDRD, 6
+    sbi DDRD, 5
+    sbi DDRD, 4
+	
+	;LED carry PD2 (D2)
+	sbi DDRD, 2
+
+	;Botón suma PD3 (D3)
+	cbi DDRD, 3
+	sbi PORTD, 3
+
+	clr cont1
 	clr cont2
+
 ; =========================
 ; LOOP PRINCIPAL
 ;Botón suelto = 1
@@ -83,6 +107,9 @@ LOOP:
 	sbis PINC, 5  //Verifica si el botón esta presionado, entra a decrementar
     rjmp DEC2
 
+;-------------Contador 2--------------
+    sbis PIND, 3  //Verifica si el botón esta presionado para mostrar la suma
+    rjmp MOSTRAR_SUMA
 
     rjmp LOOP
 
@@ -91,35 +118,19 @@ LOOP:
 ; =========================
 INC1:
     rcall DELAY
-    sbis PINB, 1		//Verifica si el PB1 esta presionado 
-    rjmp DO_INC1
+    sbis PINB, 1
+    inc cont1	//Incrementa en 1 
+    andi cont1, 0x0F	//Mantiene el valor entre 0 y 15
+    rcall LEDS1
     rjmp LOOP
-DO_INC1: 
-	inc cont1	//Incrementa en 1
-	andi cont1, 0x0F	//Mantiene el valor entre 0 y 15
-	rcall LEDS1
-WAIT1I:
-	sbic PINB, 1
-	rjmp WAIT1I
-	rjmp LOOP
 
-DEC1: 
-rcall DELAY
-    sbis PINB, 0		//Verifica si el PB0 esta presionado 
-    rjmp DO_DEC1
+DEC1:
+    rcall DELAY
+    sbis PINB, 0	//Verifica si esta presionado el botón
+    dec cont1	//Decrementa en 1 el contador
+    andi cont1, 0x0F	
+    rcall LEDS1
     rjmp LOOP
-DO_DEC1: 
-	tst cont1
-	brne D1OK
-	ldi cont1, 16	//Carga 16 como numero para decrementar
-D1OK: 
-	dec cont1	//Decrementa en 1 el contador
-	rcall LEDS1
-WAIT1D:
-	sbic PINB, 0
-	rjmp WAIT1D
-	rjmp LOOP
-
 
 
 ; =========================
@@ -127,35 +138,60 @@ WAIT1D:
 ; =========================
 INC2:
     rcall DELAY
-    sbis PINC, 4		//Verifica si el botón esta presionado
-    rjmp DO_INC2
+    sbis PINC, 4
+    inc cont2	//Incrementa en 1 
+    andi cont2, 0x0F	//Mantiene el valor entre 0 y 15
+    rcall LEDS2
     rjmp LOOP
-DO_INC2: 
-	inc cont2	//Incrementa en 1
-	andi cont2, 0x0F	//Limita el contador a 16 bits
-	rcall LEDS2
-WAIT2I:
-	sbic PINC, 4	//Verifica si esta presionado el botón
-	rjmp WAIT2I
-	rjmp LOOP
 
-DEC2: 
-rcall DELAY
-    sbis PINC, 5		//Verifica si el PB0 esta presionado 
-    rjmp DO_DEC2
+DEC2:
+    rcall DELAY
+    sbis PINC, 5	//Verifica si esta presionado el botón
+    dec cont2	//Decrementa en 1 el contador
+    andi cont2, 0x0F
+    rcall LEDS2
     rjmp LOOP
-DO_DEC2: 
-	tst cont2
-	brne D2OK
-	ldi cont2, 16	//Carga 16 como numero para decrementar
-D2OK: 
-	dec cont2	//Decrementa en 1 el contador
-	rcall LEDS2
-WAIT2D:
-	sbic PINC, 5
-	rjmp WAIT2D
-	rjmp LOOP
 
+; =========================
+; MOSTRAR SUMA
+; =========================
+MOSTRAR_SUMA:
+    add cont1, cont2
+    mov suma, cont1	//Suma contador 1 y contador 2
+
+    ; carry
+    brcc NO_CARRY
+    sbi PORTD, 2	//Si hubo carry, se enciende la LED en D2
+    rjmp SHOW	
+
+NO_CARRY:
+    cbi PORTD, 2	//Indica si hay overflow y si se tiene que mostrar o no
+
+SHOW:
+    andi suma, 0x0F	//Solo se muestran los 4 bits menos significativos
+    in portd_t, PORTD
+    andi portd_t, 0b00001111	//Conserva D3 y D2
+    mov temp, suma
+    lsl temp
+    lsl temp
+    lsl temp
+    lsl temp	//Alinea suma con D7–D4
+    or portd_t, temp
+    out PORTD, portd_t
+
+    ; esperar soltar botón
+WAIT_SUM:
+    sbic PIND, 3
+    rjmp WAIT_SUM
+
+    ; apagar LEDs de suma
+    cbi PORTD, 7
+    cbi PORTD, 6
+    cbi PORTD, 5
+    cbi PORTD, 4
+    cbi PORTD, 2
+
+    rjmp LOOP
 ; =========================
 ; MOSTRAR EN LEDS
 ; =========================
